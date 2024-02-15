@@ -30,7 +30,7 @@ import legacy
 from metrics import metric_main
 from camera_utils import LookAtPoseSampler
 from training.crosssection_utils import sample_cross_section
-
+from training.loss import DepthLoss
 #----------------------------------------------------------------------------
 
 def setup_snapshot_image_grid(training_set, random_seed=0):
@@ -140,6 +140,8 @@ def training_loop(
     # torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False  # Improves numerical accuracy.
     conv2d_gradfix.enabled = True                       # Improves training speed. # TODO: ENABLE
     grid_sample_gradfix.enabled = False                  # Avoids errors with the augmentation pipe.
+    if rank == 0:
+        depth_loss_calculation = DepthLoss(device)
 
     # Load training set.
     if rank == 0:
@@ -365,10 +367,13 @@ def training_loop(
             images = torch.cat([o['image'].cpu() for o in out]).numpy()
             images_raw = torch.cat([o['image_raw'].cpu() for o in out]).numpy()
             images_depth = -torch.cat([o['image_depth'].cpu() for o in out]).numpy()
+            # calculate depth from images_raw
+            pred_depth = torch.cat([depth_loss_calculation.calculate_depth(o['image_raw'], return_disparity=False).cpu() for o in out]).numpy()
+            # calculate disparity from images_depth
             save_image_grid(images, os.path.join(run_dir, f'fakes{cur_nimg//1000:06d}.png'), drange=[-1,1], grid_size=grid_size)
             save_image_grid(images_raw, os.path.join(run_dir, f'fakes{cur_nimg//1000:06d}_raw.png'), drange=[-1,1], grid_size=grid_size)
             save_image_grid(images_depth, os.path.join(run_dir, f'fakes{cur_nimg//1000:06d}_depth.png'), drange=[images_depth.min(), images_depth.max()], grid_size=grid_size)
-
+            save_image_grid(pred_depth, os.path.join(run_dir, f'fakes{cur_nimg//1000:06d}_pred_depth.png'), drange=[pred_depth.min(), pred_depth.max()], grid_size=grid_size)
             #--------------------
             # # Log forward-conditioned images
 
